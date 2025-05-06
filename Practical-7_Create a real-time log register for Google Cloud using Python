@@ -1,0 +1,39 @@
+//Name: Taniksha Upadhyay
+//PRN: 22070521151
+
+import gspread
+from google.oauth2.service_account import Credentials
+from datetime import datetime
+import random
+import time
+
+# Define the scope and authorize with Google Sheets
+SCOPES = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+credentials = Credentials.from_service_account_file("Iot123.json", scopes=SCOPES)
+gc = gspread.authorize(credentials)
+
+# Open spreadsheet and select worksheet
+spreadsheet = gc.open("IoT123")
+worksheet = spreadsheet.get_worksheet(0)  # First sheet (index-based access)
+
+# If the sheet is empty, add headers
+if not worksheet.get_all_values():
+    worksheet.append_row(["Date", "Time", "Temperature (°C)", "Humidity (%)"])
+
+# Function to simulate sensor data
+def generate_sensor_data():
+    return {
+        "date": datetime.now().strftime("%Y-%m-%d"),
+        "time": datetime.now().strftime("%H:%M:%S"),
+        "temperature": round(random.uniform(20.0, 35.0), 2),
+        "humidity": round(random.uniform(30.0, 70.0), 2)
+    }
+
+# Insert 10 rows of data
+for _ in range(10):
+    data = generate_sensor_data()
+    row = [data["date"], data["time"], data["temperature"], data["humidity"]]
+    worksheet.append_row(row)
+    time.sleep(1)  # Delay to avoid quota issues
+
+print("IoT data sent successfully to Google Sheets!")
