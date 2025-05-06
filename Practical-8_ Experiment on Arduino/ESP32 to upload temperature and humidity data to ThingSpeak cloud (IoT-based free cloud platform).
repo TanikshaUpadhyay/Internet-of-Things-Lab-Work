@@ -1,0 +1,137 @@
+//Name: Taniksha Upadhyay
+//PRN: 22070521151
+
+#include <DHT.h>
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
+
+#if defined(ESP32)
+#include <WiFi.h>
+#include <FirebaseESP32.h>
+#elif defined(ESP8266)
+#include <ESP8266WiFi.h>
+#include <FirebaseESP8266.h>
+#endif
+
+#include <addons/TokenHelper.h>
+#include <addons/RTDBHelper.h>
+
+// ---------- CONFIG SECTION ---------- //
+#define DHTPIN 2              // DHT sensor data pin (GPIO2)
+#define DHTTYPE DHT11          // Use DHT22 if needed
+#define WATER_SENSOR_PIN A0    // Analog water level sensor pin
+
+#define WIFI_SSID "UpadhyayTaniksha"
+#define WIFI_PASSWORD "20222026"
+
+#define API_KEY "AIzaSyAZDU5OW7NEKnekyrF3darB6-COarcAqws"
+#define DATABASE_URL "https://iot-project-ce8c0-default-rtdb.firebaseio.com/" 
+
+#define USER_EMAIL "taniksha.upadhyay.btech2022@sitnagpur.siu.edu.in"
+#define USER_PASSWORD "123456789"
+// ----------------------------------- //
+
+// Firebase & DHT Setup
+FirebaseData fbdo;
+FirebaseAuth auth;
+FirebaseConfig config;
+DHT dht(DHTPIN, DHTTYPE);
+
+// LCD Setup: 0x27 is the default I2C address for many LCDs
+LiquidCrystal_I2C lcd(0x27, 16, 2);
+
+// Firebase update timer
+unsigned long sendDataPrevMillis = 0;
+const long interval = 5000;  // 5 seconds
+
+void setup() {
+  Serial.begin(115200);
+  dht.begin();
+  Wire.begin(4, 5); // SDA = D2, SCL = D1
+
+  lcd.init();
+  lcd.backlight();
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Starting...");
+
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  Serial.print("Connecting to Wi-Fi");
+  while (WiFi.status() != WL_CONNECTED) {
+    Serial.print(".");
+    delay(300);
+  }
+
+  Serial.println();
+  Serial.print("Connected with IP: ");
+  Serial.println(WiFi.localIP());
+  Serial.println();
+
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("WiFi Connected");
+
+  Serial.printf("Firebase Client v%s\n\n", FIREBASE_CLIENT_VERSION);
+
+  config.api_key = API_KEY;
+  config.database_url = DATABASE_URL;
+  auth.user.email = USER_EMAIL;
+  auth.user.password = USER_PASSWORD;
+  config.token_status_callback = tokenStatusCallback;
+
+  Firebase.begin(&config, &auth);
+  Firebase.reconnectWiFi(true);
+  Firebase.setDoubleDigits(5);
+
+  delay(2000);
+  lcd.clear();
+}
+
+void loop() {
+  if (Firebase.ready() && millis() - sendDataPrevMillis > interval) {
+    sendDataPrevMillis = millis();
+
+    // --- Read Sensor Data --- //
+    float temp = dht.readTemperature();
+    float hum = dht.readHumidity();
+    int waterLevel = analogRead(WATER_SENSOR_PIN);
+
+    // Check for sensor read errors
+    if (isnan(temp) || isnan(hum)) {
+      Serial.println("Failed to read from DHT sensor!");
+      return;
+    }
+
+    String levelStatus = "Unknown";
+    if (waterLevel > 500) {
+      levelStatus = "Full";
+    } else if (waterLevel > 300) {
+      levelStatus = "Mid";
+    } else {
+      levelStatus = "Empty";
+    }
+
+    // --- Print to Serial Monitor --- //
+    Serial.println("Uploading to Firebase...");
+    Serial.print("Temperature: "); Serial.println(temp);
+    Serial.print("Humidity: "); Serial.println(hum);
+    Serial.print("Water Level Value: "); Serial.println(waterLevel);
+    Serial.print("Water Status: "); Serial.println(levelStatus);
+
+    // --- Display on LCD --- //
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("T:"); lcd.print(temp, 1); lcd.print("C ");
+    lcd.print("H:"); lcd.print(hum, 0); lcd.print("%");
+
+    lcd.setCursor(0, 1);
+    lcd.print("W:"); lcd.print(waterLevel);
+    lcd.print(" "); lcd.print(levelStatus);
+
+    // --- Push to Firebase --- //
+    Firebase.setFloat(fbdo, "/tank/temperature", temp);
+    Firebase.setFloat(fbdo, "/tank/humidity", hum);
+    Firebase.setInt(fbdo, "/tank/waterLevelValue", waterLevel);
+    Firebase.setString(fbdo, "/tank/status", levelStatus);
+  }
+}
